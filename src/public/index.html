@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YesImBot 记忆面板</title>
+  <style>
+    :root {
+      --bg: #16181d; --panel: #1f232b; --panel-2: #262b35; --border: #343a46;
+      --text: #e6e9ef; --text-dim: #9aa3b2; --accent: #79a8ff; --ok: #4dbd74;
+      --warn-bg: #3a2f1d; --warn-border: #b58a3a; --warn-text: #ffd479; --danger: #ff6b6b;
+      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+    header h1 { font-size: 16px; margin: 0; }
+    header .sub { color: var(--text-dim); font-size: 12px; }
+    .tabs { display: flex; gap: 4px; margin-left: auto; }
+    .tabs button { background: transparent; color: var(--text-dim); border: 1px solid transparent; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .tabs button.active { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+    main { padding: 16px 20px 40px; max-width: 1200px; margin: 0 auto; }
+    section.page { display: none; }
+    section.page.active { display: block; }
+    .banner { border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-text); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+    .banner.danger { border-color: var(--danger); background: #3a1d1d; color: #ffb4b4; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .card h3 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .card .meta { color: var(--text-dim); font-size: 12px; }
+    .tag { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim); }
+    .tag.injected { background: #1e3a2a; border-color: var(--ok); color: var(--ok); }
+    .tag.file { background: #3a2f1d; border-color: var(--warn-border); color: var(--warn-text); }
+    pre.block { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; margin: 6px 0 0; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+    select, input, button.act { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    button.act { cursor: pointer; }
+    button.act:hover { border-color: var(--accent); }
+    button.act.danger { border-color: var(--danger); color: var(--danger); }
+    .row { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+    .row .time { color: var(--text-dim); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+    .row .who { color: var(--accent); font-size: 12px; white-space: nowrap; }
+    .row .type { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+    .row .txt { flex: 1; word-break: break-word; white-space: pre-wrap; }
+    .row .sim { color: var(--ok); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .stat .num { font-size: 22px; font-weight: 600; font-family: var(--mono); }
+    .stat .lbl { color: var(--text-dim); font-size: 12px; }
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.tbl th, table.tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    table.tbl th { color: var(--text-dim); font-weight: 500; }
+    .muted { color: var(--text-dim); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .cal-head { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+    .cal-cell { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px; cursor: pointer; font-size: 12px; }
+    .cal-cell:hover { border-color: var(--accent); }
+    .cal-cell.has { background: #1e3a2a; color: var(--ok); }
+    .cal-cell.hot { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cal-cell .d { font-family: var(--mono); font-weight: 600; }
+    .empty { color: var(--text-dim); padding: 18px 0; text-align: center; }
+    #toast { position: fixed; right: 16px; bottom: 16px; background: var(--panel-2); border: 1px solid var(--border); padding: 10px 14px; border-radius: 8px; display: none; }
+    .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .preview-grid .card { grid-column: span 1; }
+    .preview-grid .blocks-card { grid-column: span 2; }
+    @media (max-width: 900px) { .preview-grid { grid-template-columns: 1fr; } .preview-grid .blocks-card { grid-column: span 1; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>YesImBot 记忆面板</h1>
+    <span class="sub" id="status-line">…</span>
+    <nav class="tabs">
+      <button data-tab="blocks" class="active">核心人格</button>
+      <button data-tab="memory">三级记忆</button>
+      <button data-tab="health">记忆体检</button>
+      <button data-tab="debug">注入联调</button>
+    </nav>
+  </header>
+  <main>
+    <section class="page active" id="tab-blocks">
+      <div class="banner">人格块与 YesImBot 每次 Agent 心跳注入使用同一公开方法（getMemoryBlocksForRendering）。</div>
+      <div id="blocks-list" class="grid"></div>
+    </section>
+    <section class="page" id="tab-memory">
+      <div class="toolbar">
+        <label>频道</label>
+        <select id="l1-channel"><option value="">（所有）</option></select>
+        <button class="act" id="refresh-l1">刷新</button>
+      </div>
+      <div class="banner" id="mem-banner" style="display:none"></div>
+      <h2>L1 工作记忆（最近对话）</h2>
+      <div id="l1-list"></div>
+      <h2>L2 语义记忆</h2>
+      <div class="toolbar">
+        <input id="l2-query" placeholder="输入关键词检索 L2（走 yesimbot.world-state 的 l2_manager.search）" style="flex:1" />
+        <button class="act" id="btn-l2">检索</button>
+        <button class="act" id="btn-l2-list">浏览全部</button>
+      </div>
+      <div id="l2-list"></div>
+      <h2>L3 日记（日历）</h2>
+      <div class="cal-head">
+        <button class="act" id="cal-prev">‹</button>
+        <span id="cal-label"></span>
+        <button class="act" id="cal-next">›</button>
+      </div>
+      <div id="cal-grid" class="cal-grid"></div>
+      <div id="l3-list"></div>
+    </section>
+    <section class="page" id="tab-health">
+      <div id="health-content"></div>
+    </section>
+    <section class="page" id="tab-debug">
+      <div class="banner danger">结果可能非逐字还原真实推理输入（未经过 buildWorldState 的会话上下文组装，且真实 L2 受“L1 满载才触发”条件影响）。</div>
+      <div class="toolbar">
+        <input id="dbg-text" placeholder="输入一句话，模拟查看将注入的 L2 片段 + L1 上下文 + 人格" style="flex:1" />
+        <select id="dbg-channel"><option value="">（所有）</option></select>
+        <button class="act" id="btn-debug">联调预览</button>
+      </div>
+      <div id="dbg-result"></div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
