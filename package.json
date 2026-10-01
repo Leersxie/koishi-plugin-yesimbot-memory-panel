@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yesimbot-memory-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / 注入联调",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -16,7 +16,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "YesImBot 记忆可视化面板：核心人格块、L1/L2/L3 三级记忆、记忆体检与注入联调（排查"为什么这样回答"）。",
+      "zh": "YesImBot 记忆可视化面板：核心人格块、L1/L2/L3 三级记忆、记忆体检与注入联调（排查“为什么这样回答”）。",
       "en": "YesImBot memory visualization panel: core personality blocks, L1/L2/L3 memory, memory health check and injection debug."
     },
     "service": {
