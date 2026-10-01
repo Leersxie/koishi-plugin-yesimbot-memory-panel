@@ -1,8 +1,10 @@
 # koishi-plugin-yesimbot-memory-panel
 
+> ⚠️ **全AI制作** · 本项目由 AI 全流程生成，未经充分人工测试，存在很多问题，请注意使用、谨慎评估后再部署到生产环境。
+
 YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / 注入联调。
 
-通过 Koishi 控制台内嵌页面，直观查看 YesImBot 的长期记忆体系，并排查“为什么这样回答”。
+通过 Koishi 控制台内嵌页面，直观查看 YesImBot 的长期记忆体系，并排查"为什么这样回答"。
 
 ## 功能
 
@@ -20,7 +22,7 @@ YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / �
 npm i koishi-plugin-yesimbot-memory-panel
 ```
 
-在 Koishi 控制台的插件市场中搜索“yesimbot-memory-panel”安装，或手动在配置中加入：
+在 Koishi 控制台的插件市场中搜索"yesimbot-memory-panel"安装，或手动在配置中加入：
 
 ```yaml
 plugins:
