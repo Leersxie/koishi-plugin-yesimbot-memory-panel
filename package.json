@@ -1,0 +1,59 @@
+{
+  "name": "koishi-plugin-yesimbot-memory-panel",
+  "version": "0.1.0",
+  "description": "YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / 注入联调",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist",
+    "src/public",
+    "client"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "koishi": {
+    "description": {
+      "zh": "YesImBot 记忆可视化面板：核心人格块、L1/L2/L3 三级记忆、记忆体检与注入联调（排查"为什么这样回答"）。",
+      "en": "YesImBot memory visualization panel: core personality blocks, L1/L2/L3 memory, memory health check and injection debug."
+    },
+    "service": {
+      "required": [
+        "console",
+        "server"
+      ],
+      "optional": [
+        "yesimbot.world-state",
+        "yesimbot.memory"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:client": "koishi-console build",
+    "watch": "tsc -w --preserveWatchOutput",
+    "clean": "node -e \"fs.rmSync('lib',{recursive:true,force:true})\""
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Leersxie/koishi-plugin-yesimbot-memory-panel.git"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.3"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@koishijs/client": "^5.6.1",
+    "@koishijs/plugin-console": "^5.6.1",
+    "@koishijs/plugin-server": "^3.2.9",
+    "@types/node": "^20.19.0",
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.3",
+    "typescript": "^5.6.0",
+    "vue": "^3.4.0"
+  }
+}
