@@ -37,13 +37,24 @@ function needChannel(platform: string, channelId: string): boolean {
   return !platform || !channelId
 }
 
+/** 降级检索：关键词重叠得分（中英文混合：连续文本按 2-gram 切分）+ 时间升序 */
 function keywordScore(content: string, query: string): number {
   const words = query
     .split(/[\s,，。.!！?？;；:：""''（）()\-_/\\]+/)
     .filter((w) => w.length >= 2)
   if (!words.length) return 0
   let hit = 0
-  for (const w of words) if (content.includes(w)) hit++
+  for (const w of words) {
+    if (w.length <= 4 && /^[\u4e00-\u9fff]+$/.test(w)) {
+      const grams: string[] = []
+      for (let i = 0; i + 2 <= w.length; i++) grams.push(w.slice(i, i + 2))
+      if (grams.some((g) => content.includes(g))) {
+        hit++
+        continue
+      }
+    }
+    if (content.includes(w)) hit++
+  }
   return hit / words.length
 }
 
@@ -137,20 +148,40 @@ export async function listL2(ctx: Context, platform: string, channelId: string, 
   const query: Record<string, unknown> = {}
   if (platform) query.platform = platform
   if (channelId) query.channelId = channelId
-  const rows = await ctx.database.get(TableName.L2Chunks, query, {
-    fields: ['id', 'platform', 'channelId', 'content', 'startTimestamp', 'endTimestamp'],
-  })
-  rows.sort((a, b) => new Date(b.startTimestamp).getTime() - new Date(a.startTimestamp).getTime())
+  const start = page * pageSize
+  let rows: Array<{ id: string; platform: string; channelId: string; content: string; startTimestamp: Date; endTimestamp: Date }> | null = null
+  try {
+    rows = await (ctx.database as any)
+      .select(TableName.L2Chunks, query)
+      .orderBy('startTimestamp', 'desc')
+      .limit(start, pageSize)
+      .project(['id', 'platform', 'channelId', 'content', 'startTimestamp', 'endTimestamp'])
+      .execute()
+  } catch {
+    rows = null
+  }
+  let items = rows ?? []
+  let total = -1
+  if (rows === null) {
+    const all = await ctx.database.get(TableName.L2Chunks, query, {
+      fields: ['id', 'platform', 'channelId', 'content', 'startTimestamp', 'endTimestamp'],
+    })
+    all.sort((a, b) => new Date(b.startTimestamp).getTime() - new Date(a.startTimestamp).getTime())
+    total = all.length
+    items = all.slice(start, start + pageSize)
+  }
   let dim: number | null = null
   try {
-    const one = await ctx.database.get(TableName.L2Chunks, { id: rows[0]?.id }, { fields: ['embedding'] })
-    dim = one[0]?.embedding?.length ?? null
+    const firstId = rows?.[0]?.id ?? (items[0] as { id?: string } | undefined)?.id
+    if (firstId) {
+      const one = await ctx.database.get(TableName.L2Chunks, { id: firstId }, { fields: ['embedding'] })
+      dim = one[0]?.embedding?.length ?? null
+    }
   } catch {
     /* 忽略维度探测失败 */
   }
-  const start = page * pageSize
   return {
-    items: rows.slice(start, start + pageSize).map((row) => ({
+    items: items.map((row) => ({
       id: row.id,
       platform: row.platform,
       channelId: row.channelId,
@@ -160,7 +191,7 @@ export async function listL2(ctx: Context, platform: string, channelId: string, 
       endTimestamp: toIso(row.endTimestamp),
       dim,
     })),
-    total: rows.length,
+    total,
     dim,
     degraded: [],
     warnings: ['L2 列表为数据库表直读（不参与检索），仅用于浏览。'],
