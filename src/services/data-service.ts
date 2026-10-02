@@ -1,7 +1,7 @@
 import type { Context } from 'koishi'
 import { TableName } from 'koishi-plugin-yesimbot'
 import type { Config } from '../config'
-import { hasDatabase, hasWorldState, settle } from './common'
+import { hasDatabase, hasWorldState, settle, tzLocalDayBoundsUTC } from './common'
 import { getBlocks, type BlockResult } from './blocks'
 import { getL1, listChannels } from './l1'
 import { searchL2, listL2 } from './l2'
@@ -81,28 +81,31 @@ export class MemoryPanelService {
       return { tables: [], byChannel: [], l2Dim: null, totalDiaries: 0, degraded: ['overview'], warnings: ['无数据库服务，无法体检。'] }
     }
     const db = this.ctx.database!
-    const statResults = await settle(MEMORY_TABLES.map((name) => db.get(name, {}, { fields: ['id'] })))
-    const tables: TableStat[] = statResults.map((r, index) => {
-      const name = MEMORY_TABLES[index]!
-      return r.ok ? { name, rows: r.value.length, size: null } : { name, rows: 0, size: null, error: r.error }
-    })
     let rawStats: Record<string, { rows?: number; size?: number }> | null = null
     try {
-      const stats = await (db as unknown as { stats?: () => Promise<Record<string, { rows?: number; size?: number }>> }).stats?.()
-      rawStats = stats ?? null
+      const stats = await (db as unknown as { stats?: () => Promise<any> }).stats?.()
+      const normalized: Record<string, { rows?: number; size?: number }> = {}
+      if (stats && (stats as any).tables) {
+        for (const [name, info] of Object.entries((stats as any).tables)) {
+          const t = info as { count?: number; size?: number }
+          normalized[name] = { rows: t.count, size: t.size }
+        }
+        rawStats = normalized
+      }
     } catch {
       rawStats = null
     }
-    if (rawStats) {
-      for (const stat of tables) {
-        stat.size = rawStats[stat.name]?.size ?? null
-      }
-    }
-    const [msgs, l2, l3] = await settle([
-      db.get(TableName.Messages, {}, { fields: ['platform', 'channelId'] }),
-      db.get(TableName.L2Chunks, {}, { fields: ['platform', 'channelId'] }),
-      db.get(TableName.L3Diaries, {}, { fields: ['platform', 'channelId'] }),
-    ])
+    const statResults = await settle(
+      MEMORY_TABLES.map((name) =>
+        rawStats && rawStats[name]?.rows != null
+          ? Promise.resolve({ length: rawStats[name]!.rows! })
+          : db.get(name, {}, { fields: ['id'] }),
+      ),
+    )
+    const tables: TableStat[] = statResults.map((r, index) => {
+      const name = MEMORY_TABLES[index]!
+      return r.ok ? { name, rows: (r.value as unknown as { length: number }).length, size: rawStats?.[name]?.size ?? null } : { name, rows: 0, size: null, error: r.error }
+    })
     const byChannel = new Map<string, { messages: number; l2: number; l3: number }>()
     const addCount = (rows: Array<{ platform?: string; channelId?: string }>, field: 'messages' | 'l2' | 'l3') => {
       for (const row of rows) {
@@ -112,12 +115,52 @@ export class MemoryPanelService {
         byChannel.set(key, item)
       }
     }
-    if (msgs.ok) addCount(msgs.value, 'messages')
-    if (l2.ok) addCount(l2.value, 'l2')
-    if (l3.ok) addCount(l3.value, 'l3')
+    const groupCounts = async (name: TableKey): Promise<Array<{ platform: string; channelId: string; count: number }> | null> => {
+      try {
+        const mod: any = require('minato')
+        const Eval = mod.Eval
+        const grouped = await (db as any).select(name, {}).groupBy(['platform', 'channelId'], (row: any) => ({ count: Eval.count(row.id) })).execute()
+        return (grouped as Array<{ platform?: string; channelId?: string; count?: number }>).map((row) => ({
+          platform: row.platform ?? '?',
+          channelId: row.channelId ?? '?',
+          count: row.count ?? 0,
+        }))
+      } catch {
+        return null
+      }
+    }
+    const groupRes = await Promise.all([groupCounts(TableName.Messages), groupCounts(TableName.L2Chunks), groupCounts(TableName.L3Diaries)])
+    const gMsg = groupRes[0]
+    const gL2 = groupRes[1]
+    const gL3 = groupRes[2]
+    const setGroup = (rows: Array<{ platform: string; channelId: string; count: number }> | null, field: 'messages' | 'l2' | 'l3') => {
+      if (!rows) return false
+      for (const row of rows) {
+        const key = `${row.platform}:${row.channelId}`
+        const item = byChannel.get(key) ?? { messages: 0, l2: 0, l3: 0 }
+        item[field] += row.count
+        byChannel.set(key, item)
+      }
+      return true
+    }
+    const gOk = [setGroup(gMsg, 'messages'), setGroup(gL2, 'l2'), setGroup(gL3, 'l3')]
+    if (!gOk[0] || !gOk[1] || !gOk[2]) {
+      const needMsg = !gOk[0]
+      const needL2 = !gOk[1]
+      const needL3 = !gOk[2]
+      if (needMsg || needL2 || needL3) {
+        const fallback = await settle([
+          needMsg ? db.get(TableName.Messages, {}, { fields: ['platform', 'channelId'] }) : Promise.resolve([]),
+          needL2 ? db.get(TableName.L2Chunks, {}, { fields: ['platform', 'channelId'] }) : Promise.resolve([]),
+          needL3 ? db.get(TableName.L3Diaries, {}, { fields: ['platform', 'channelId'] }) : Promise.resolve([]),
+        ])
+        if (needMsg && fallback[0].ok) addCount(fallback[0].value as Array<{ platform?: string; channelId?: string }>, 'messages')
+        if (needL2 && fallback[1].ok) addCount(fallback[1].value as Array<{ platform?: string; channelId?: string }>, 'l2')
+        if (needL3 && fallback[2].ok) addCount(fallback[2].value as Array<{ platform?: string; channelId?: string }>, 'l3')
+      }
+    }
     const l2Dim = await this.l2Dim()
     const totalDiaries = tables.find((t) => t.name === TableName.L3Diaries)?.rows ?? 0
-
     if (rawStats === null) {
       degraded.push('overview-size')
       warnings.push('当前数据库驱动未提供 size 统计，容量列显示为 —。')
@@ -203,22 +246,25 @@ export class MemoryPanelService {
     const query: Record<string, unknown> = {}
     if (platform) query.platform = platform
     if (channelId) query.channelId = channelId
+    const tz = this.config.timezone || 'Asia/Shanghai'
+    const afterBounds = after ? tzLocalDayBoundsUTC(tz, after) : null
+    const beforeBounds = before ? tzLocalDayBoundsUTC(tz, before) : null
     if (real === TableName.L3Diaries) {
       if (before) query.date = { $lte: before }
       if (after) query.date = { $gte: after }
     } else {
+      const field = real === TableName.L2Chunks ? 'startTimestamp' : 'timestamp'
       const ts: Record<string, unknown> = {}
-      if (before) ts.$lte = new Date(before)
-      if (after) ts.$gte = new Date(after)
-      if (Object.keys(ts).length) query.timestamp = ts
+      if (afterBounds) ts.$gte = afterBounds.start
+      if (beforeBounds) ts.$lt = beforeBounds.end
+      if (Object.keys(ts).length) query[field] = ts
     }
     const target = (await db.get(real, query, { fields: ['id'] })) as Array<{ id: string }>
     if (!target.length) return { table, removed: 0, skipped: 0, degraded, warnings: ['没有符合条件的数据。'] }
     const victims = target.slice(0, this.config.cleanupMaxRows)
-    const removed = victims.length
     await db.remove(real, { id: { $in: victims.map((v) => v.id) } } as never)
-    const skipped = target.length - removed
-    if (skipped > 0) warnings.push(`符合条件共 ${target.length} 行，受护栏限制仅删除 ${removed} 行，剩余 ${skipped} 行请分批处理。`)
-    return { table, removed, skipped, degraded, warnings }
+    const skipped = target.length - victims.length
+    if (skipped > 0) warnings.push(`符合条件共 ${target.length} 行，受护栏限制仅删除 ${victims.length} 行，剩余 ${skipped} 行请分批处理。`)
+    return { table, removed: victims.length, skipped, degraded, warnings }
   }
 }

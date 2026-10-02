@@ -2,7 +2,6 @@ import type { Context } from 'koishi'
 import { join } from 'node:path'
 import { Services } from 'koishi-plugin-yesimbot'
 
-/** REST 响应统一外壳 */
 export interface ApiEnvelope<T> {
   ok: boolean
   data: T
@@ -11,13 +10,11 @@ export interface ApiEnvelope<T> {
   error?: string
 }
 
-/** koa-router 查询参数可能是 string | string[] | undefined，统一取首个字符串 */
 export function qs(value: unknown): string {
   if (Array.isArray(value)) return value[0] ?? ''
   return typeof value === 'string' ? value : ''
 }
 
-/** 解析数字参数，非法时回退到默认值 */
 export function onum(value: unknown, fallback: number): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
@@ -56,4 +53,30 @@ export async function settle<T>(tasks: Promise<T>[]): Promise<Array<{ ok: true; 
       ),
     ),
   )
+}
+
+export function tzLocalDayBoundsUTC(timeZone: string, dateStr: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  const probe = Date.UTC(y, mo - 1, d, 12, 0, 0)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const asPartsUTCFake = (ms: number) => {
+    const p = Object.fromEntries(parts.formatToParts(new Date(ms)).map((x) => [x.type, x.value]))
+    return Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute))
+  }
+  const offsetMs = asPartsUTCFake(probe) - probe
+  const start = new Date(Date.UTC(y, mo - 1, d, 0, 0, 0) - offsetMs)
+  const end = new Date(start.getTime() + 86400000)
+  return { start, end }
 }
