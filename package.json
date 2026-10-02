@@ -1,15 +1,10 @@
 {
   "name": "koishi-plugin-yesimbot-memory-panel",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / 注入联调",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "files": [
-    "lib",
-    "dist",
-    "src/public",
-    "client"
-  ],
+  "files": ["lib", "dist", "src/public", "client"],
   "sideEffects": false,
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -20,14 +15,8 @@
       "en": "YesImBot memory visualization panel: core personality blocks, L1/L2/L3 memory, memory health check and injection debug."
     },
     "service": {
-      "required": [
-        "console",
-        "server"
-      ],
-      "optional": [
-        "yesimbot.world-state",
-        "yesimbot.memory"
-      ]
+      "required": ["console", "server"],
+      "optional": ["database", "yesimbot.world-state", "yesimbot.memory"]
     }
   },
   "scripts": {
