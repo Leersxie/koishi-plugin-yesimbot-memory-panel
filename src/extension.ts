@@ -1,16 +1,14 @@
-import { Context } from 'koishi'
-import type {} from '@koishijs/plugin-console'
+import type { Context } from 'koishi'
 import { promises as fs } from 'node:fs'
 import { extname, resolve } from 'node:path'
 import { Services } from 'koishi-plugin-yesimbot'
 import { Config } from './config'
 import { MemoryPanelService } from './services/data-service'
+import { getBehaviorData } from './services/behavior'
 import { qs, onum } from './services/common'
 
 export const PANEL_PATH = '/__yesimbot-memory-panel-ui'
-
 export const PANEL_PATH_LEGACY = '/yesimbot-memory-panel'
-
 export const name = 'yesimbot-memory-panel'
 
 export const inject = {
@@ -55,7 +53,6 @@ export function apply(ctx: Context, config: Config) {
   if (router) {
     const api = `${PANEL_PATH}/api`
     const publicDir = resolve(__dirname, '../src/public')
-
     router.get(`${api}/blocks`, async (route) => {
       const data = await svc.blocks()
       route.body = { ok: true, data: data.items, degraded: data.degraded, warnings: data.warnings }
@@ -109,6 +106,14 @@ export function apply(ctx: Context, config: Config) {
       route.body = { ok: true, data, degraded: data.degraded, warnings: data.warnings }
     })
     router.post(`${api}/cleanup`, async (route) => {
+      if (config.cleanupToken) {
+        const token = qs(route.query.token)
+        if (!token || token !== config.cleanupToken) {
+          route.status = 403
+          route.body = { ok: false, error: '清理需要访问令牌 token（未通过校验）' }
+          return
+        }
+      }
       const table = qs(route.query.table)
       const platform = qs(route.query.platform)
       const channelId = qs(route.query.channelId)
@@ -127,12 +132,14 @@ export function apply(ctx: Context, config: Config) {
         },
       }
     })
-
+    router.get(`${api}/behavior`, async (route) => {
+      const data = await getBehaviorData(ctx)
+      route.body = { ok: true, data, degraded: [], warnings: [] }
+    })
     router.get(`${PANEL_PATH_LEGACY}/(.*)`, async (route) => {
       route.status = 302
       route.redirect(`${PANEL_PATH}/`)
     })
-
     router.get(`${PANEL_PATH}`, async (route) => {
       route.type = 'text/html; charset=utf-8'
       try {
