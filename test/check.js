@@ -1,9 +1,12 @@
 /**
  * REST 接口冒烟测试：逐个请求面板接口并打印状态码与关键字段。
  * 零依赖，node 22 内置 fetch。
+ *
+ * 运行方式：& "D:\PS\Adobe Photoshop 2025\Adobe Photoshop 2026\node.exe" test/check.js
  */
 const BASE = process.env.PANEL_BASE || 'http://127.0.0.1:5141/__yesimbot-memory-panel-ui'
 
+/** 精简回答摘要：外壳字段 + data 的形状（数组长度 / 对象键名） */
 function brief(j) {
   if (!j || typeof j !== 'object') return String(j).slice(0, 120)
   const out = { ok: j.ok, degraded: j.degraded, warnings: j.warnings }
@@ -29,6 +32,7 @@ async function req(desc, method, url) {
 }
 
 async function main() {
+  // 等待服务器就绪（最多 20 * 500ms）
   for (let i = 0; i < 20; i++) {
     try { await fetch(BASE + '/api/status'); break }
     catch { await new Promise((r) => setTimeout(r, 500)) }

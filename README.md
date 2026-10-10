@@ -58,3 +58,17 @@ http://<host>:<port>/__yesimbot-memory-panel-ui/
 | `yesimbot.memory` | 可选 | 人格块真实注入同源读取 |
 
 任一可选服务缺失时对应模块自动降级并在前端标注，不影响其余功能。
+
+## 开发
+
+```sh
+# 编译后端
+pnpm build
+
+# 构建控制台产物（发布前）
+pnpm build:client
+```
+
+## License
+
+MIT

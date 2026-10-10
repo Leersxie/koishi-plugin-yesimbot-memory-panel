@@ -11,6 +11,10 @@ import { defineComponent, h, resolveComponent } from 'vue'
  * 注意（路径约定）：本页面路由为 /yesimbot-memory-panel，静态面板挂载在
  * /__yesimbot-memory-panel-ui/ —— 两者故意错开，避免静态 catch-all 抢占
  * 控制台 Vue 路由导致"整页替换、侧边栏消失"。
+ *
+ * 注意：由于 k-layout 由 @koishijs/client 提供，本文件只有在
+ * createRequire 下由 koishi 控制台的 vite/esbuild 现场编译时才引入 'vue'，
+ * 生产产物由 `koishi-console build` 生成并发布到 dist/。
  */
 export default function (ctx: Context) {
   ctx.page({
