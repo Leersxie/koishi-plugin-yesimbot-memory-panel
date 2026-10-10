@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yesimbot-memory-panel",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "YesImBot 记忆可视化面板：核心人格 / 三级记忆 / 记忆体检 / 注入联调",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

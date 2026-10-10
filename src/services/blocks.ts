@@ -4,13 +4,29 @@ import { Services } from 'koishi-plugin-yesimbot'
 import { coreMemoryDir, hasMemory } from './common'
 import type { MemoryBlockData } from 'koishi-plugin-yesimbot'
 
+/**
+ * 核心人格块取数。
+ *
+ * 优先走公开 Service：ctx[Services.Memory].getMemoryBlocksForRendering()
+ * —— 这正是 YesImBot 每次 Agent 心跳注入上下文所调用的同一个方法
+ * （见 koishi-plugin-yesimbot/lib/agent/context-builder.js 的 memoryBlocks 字段），
+ * 因此面板上标注为"注入一致"。
+ *
+ * 降级（yesimbot.memory 未加载时）：直接读 <baseDir>/data/yesimbot/memory/core/*.md，
+ * 此时前端必须展示"本地文件模拟"标注。
+ */
+
+/** 面板展示用的人格块条目 */
 export interface BlockItem {
   title: string
   label: string
   description: string
   content: string
+  /** 字节数（service 路径取字符数近似，文件路径取 fs 真实字节数） */
   size: number
+  /** 来源标识：service=YesImBot 公开服务 / file=本地文件降级 */
   source: 'service' | 'file'
+  /** 是否与真实注入同一数据源 */
   injected: boolean
 }
 
@@ -21,6 +37,7 @@ export interface BlockResult {
   warnings: string[]
 }
 
+/** 通过公开 Service 获取（与真实注入一致） */
 async function viaService(ctx: Context, blocks: MemoryBlockData[]): Promise<BlockResult> {
   return {
     items: blocks.map((block) => ({
@@ -38,6 +55,7 @@ async function viaService(ctx: Context, blocks: MemoryBlockData[]): Promise<Bloc
   }
 }
 
+/** 降级：直接扫描核心人格目录，解析 *.md / *.txt */
 async function viaFile(ctx: Context): Promise<BlockResult> {
   const dir = coreMemoryDir(ctx)
   let names: string[] = []
@@ -51,6 +69,7 @@ async function viaFile(ctx: Context): Promise<BlockResult> {
     const file = `${dir}/${name}`
     try {
       const raw = await fs.readFile(file, 'utf8')
+      // 文件中可能带前端元数据头，这里仅展示文件名 + 原始内容前 3000 字，不做复杂解析
       items.push({
         title: name,
         label: name.replace(/\.(md|txt)$/i, ''),

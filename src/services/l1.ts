@@ -3,6 +3,18 @@ import { promises as fs } from 'node:fs'
 import { TableName, Services } from 'koishi-plugin-yesimbot'
 import { hasDatabase, hasWorldState, interactionsDir } from './common'
 
+/**
+ * L1 工作记忆取数。
+ *
+ * 优先走公开 Service：ctx[Services.WorldState].l1_manager.getL1History(platform, channelId, limit)
+ * —— 与真实世界状态构建（worldstate 的 context-builder）读取 L1 是同一个方法，
+ * 返回"消息 + Agent 思考/动作/观察/心跳"混合线性事件流。
+ *
+ * 降级（world-state 服务缺失或缺少频道路径）：直读数据库表 worldstate.messages，
+ * 或返回空数组并标注 degraded。
+ */
+
+/** 面板展示用的 L1 事件条目（只保留下游渲染需要的字段） */
 export interface L1Event {
   type: string
   timestamp: string
@@ -23,6 +35,7 @@ function toIso(value: Date | string): string {
   return Number.isNaN(d.getTime()) ? String(value) : d.toISOString()
 }
 
+/** 把底层 L1HistoryItem（联合类型）归一化为展示条目 */
 function serializeItem(item: any): L1Event {
   const base: L1Event = {
     type: item.type ?? 'unknown',
@@ -56,6 +69,7 @@ function serializeItem(item: any): L1Event {
   return base
 }
 
+/** 走公开 Service（与真实 L1 构建同一方法） */
 async function viaService(ctx: Context, platform: string, channelId: string, limit: number): Promise<L1Result> {
   const raw = await ctx[Services.WorldState].l1_manager.getL1History(platform, channelId, limit)
   return {
@@ -66,6 +80,7 @@ async function viaService(ctx: Context, platform: string, channelId: string, lim
   }
 }
 
+/** 降级：直读 worldstate.messages 表（只有消息，无 Agent 内部事件） */
 async function viaDatabase(ctx: Context, platform: string, channelId: string, limit: number): Promise<L1Result> {
   if (!hasDatabase(ctx)) {
     return { items: [], degraded: ['l1'], warnings: ['无数据库服务，L1 不可用。'], source: 'none' }
@@ -109,6 +124,7 @@ export interface ChannelItem {
   hasAgentLog: boolean
 }
 
+/** 频道集合：数据库消息频道 + 交互日志目录频道 取并集 */
 export async function listChannels(ctx: Context): Promise<ChannelItem[]> {
   const map = new Map<string, ChannelItem>()
   const put = (platform: string, channelId: string, hasAgent: boolean) => {

@@ -2,14 +2,34 @@ import type { Context } from 'koishi'
 import { TableName, Services } from 'koishi-plugin-yesimbot'
 import { hasDatabase, hasWorldState } from './common'
 
+/**
+ * L2 语义记忆取数。
+ *
+ * 检索优先走公开 Service：ctx[Services.WorldState].l2_manager.search(text, {platform, channelId, k})
+ * —— 与真实注入链（worldstate/context-builder.js 的 retrieveL2Memories）调用的是同一个方法，
+ * 内部包含向量相似度 + 邻居扩展 + 智能合并，返回带 similarity 的记忆块。
+ *
+ * 注意：search() 在"未配置嵌入模型 / L2 关闭 / 候选池为空"时只会返回 []，
+ * 面板无法从返回值区分这三种情况。因此：
+ * - 当 search 返回空但表 worldstate.l2_chunks 有数据时，自动降级为
+ *   "关键词重合度打分 + 时间排序"的本地模拟，并强制标注：
+ *   【以下内容为本地文件模拟，非 YesImBot 实际注入结果，仅供参考】
+ *
+ * 浏览/统计（不需要向量）：直读数据库表 worldstate.l2_chunks，排除 embedding 列，
+ * 避免把大向量数组打进 JSON。
+ */
+
+/** 面板展示用的 L2 记忆块条目 */
 export interface L2Item {
   id: string
   platform: string
   channelId: string
   content: string
+  /** service 路径才有（真实余弦相似度）；降级路径为关键词得分或 null */
   similarity: number | null
   startTimestamp: string
   endTimestamp: string
+  /** 向量维度（仅列表接口可附带） */
   dim?: number | null
 }
 
@@ -33,11 +53,12 @@ const toIso = (value: Date | string): string => {
   return Number.isNaN(d.getTime()) ? String(value) : d.toISOString()
 }
 
+/** 是否显式缺失频道上下文（search 需要 platform/channelId 才有意义） */
 function needChannel(platform: string, channelId: string): boolean {
   return !platform || !channelId
 }
 
-/** 降级检索：关键词重叠得分（中英文混合：连续文本按 2-gram 切分）+ 时间升序 */
+/** 降级检索：关键词重叠得分（中英文混合：连续文本按 2-gram 切分，避免中文整段成一个词打不进命中）+ 时间升序 */
 function keywordScore(content: string, query: string): number {
   const words = query
     .split(/[\s,，。.!！?？;；:：""''（）()\-_/\\]+/)
@@ -46,6 +67,7 @@ function keywordScore(content: string, query: string): number {
   let hit = 0
   for (const w of words) {
     if (w.length <= 4 && /^[\u4e00-\u9fff]+$/.test(w)) {
+      // 中文短词：任意 2-gram 命中即计分（覆盖"别太晚""禁言"这类连续中文）
       const grams: string[] = []
       for (let i = 0; i + 2 <= w.length; i++) grams.push(w.slice(i, i + 2))
       if (grams.some((g) => content.includes(g))) {
@@ -66,6 +88,7 @@ async function dbChunks(ctx: Context, platform: string, channelId: string, limit
     .then((rows) => rows.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime()).slice(-limit))
 }
 
+/** 走公开 Service.search（真实召回） */
 async function viaService(ctx: Context, text: string, platform: string, channelId: string, k: number): Promise<L2SearchResult> {
   const options: { platform?: string; channelId?: string; k: number } = { k }
   if (platform) options.platform = platform
@@ -87,6 +110,7 @@ async function viaService(ctx: Context, text: string, platform: string, channelI
       source: 'service',
     }
   }
+  // search 正常返回空：可能是 未配置嵌入模型 / L2 关闭 / 候选池为空，统一走降级
   const note = 'l2.search 返回为空（可能未配置嵌入模型或 L2 关闭），已改用数据库关键词模拟。'
   const rows = hasDatabase(ctx)
     ? await ctx.database.get(TableName.L2Chunks, {}, { fields: ['id', 'platform', 'channelId', 'content', 'startTimestamp', 'endTimestamp'] })
@@ -94,6 +118,7 @@ async function viaService(ctx: Context, text: string, platform: string, channelI
   return keywordFallback(rows, text, k, note)
 }
 
+/** 关键词叠加重合度模拟（降级） */
 async function keywordFallback(rows: Array<{ id: string; platform: string; channelId: string; content: string; startTimestamp: Date; endTimestamp: Date }>, text: string, k: number, note: string): Promise<L2SearchResult> {
   const scored = text.trim()
     ? rows
@@ -149,6 +174,7 @@ export async function listL2(ctx: Context, platform: string, channelId: string, 
   if (platform) query.platform = platform
   if (channelId) query.channelId = channelId
   const start = page * pageSize
+  // 优先 DB 层排序分页（避免全表拉取，l2_chunks 随对话累积可能很大）；失败退化为全量内存分页
   let rows: Array<{ id: string; platform: string; channelId: string; content: string; startTimestamp: Date; endTimestamp: Date }> | null = null
   try {
     rows = await (ctx.database as any)
@@ -161,7 +187,7 @@ export async function listL2(ctx: Context, platform: string, channelId: string, 
     rows = null
   }
   let items = rows ?? []
-  let total = -1
+  let total = -1 // DB 分页时不额外 count，前端展示"未知"
   if (rows === null) {
     const all = await ctx.database.get(TableName.L2Chunks, query, {
       fields: ['id', 'platform', 'channelId', 'content', 'startTimestamp', 'endTimestamp'],

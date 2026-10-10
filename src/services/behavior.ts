@@ -5,11 +5,21 @@ import { coreMemoryDir, yesimbotDataDir } from './common'
 
 /**
  * 行为学习器数据读取（只读视图）。
- * 直接读共享 data 目录，零插件间依赖；面板不依赖该插件被加载。
+ *
+ * 行为学习器插件的关键文件都在共享的 <baseDir>/data/yesimbot/ 下，
+ * 本面板不依赖该插件被加载，直接读文件即可展示（零插件间依赖）：
+ * - behavior.md            → <baseDir>/data/yesimbot/memory/core/behavior.md（核心记忆块）
+ * - behavior.pending.json  → <baseDir>/data/yesimbot/memory/behavior.pending.json（待确认候选）
+ * - behavior.stats.json    → <baseDir>/data/yesimbot/memory/behavior.stats.json（采纳/跳过统计）
+ *
+ * 所有读取失败都降级为空数据 + warnings，不抛错。
  */
 
+/** 行为层标签页的整体返回结构 */
 export interface BehaviorPanelData {
+  /** behavior.md 原始内容（可能极长，前端自行截断展示） */
   behaviorRaw: string
+  /** 待确认候选列表（pending.candidates） */
   candidates: Array<{
     id: string
     category: string
@@ -20,7 +30,9 @@ export interface BehaviorPanelData {
     createdAt: number
     channelCid: string
   }>
+  /** 提炼轮次与 hash 基线 */
   round: number
+  /** 统计摘要（stats 文件，可能不存在） */
   stats: null | {
     totalRounds: number
     totalCandidates: number
@@ -44,6 +56,7 @@ export async function getBehaviorData(ctx: Context): Promise<BehaviorPanelData> 
   const coreDir = coreMemoryDir(ctx)
   const dataDir = yesimbotDataDir(ctx)
 
+  // behavior.md
   let behaviorRaw = ''
   try {
     behaviorRaw = await fs.readFile(join(coreDir, 'behavior.md'), 'utf8')
@@ -51,6 +64,7 @@ export async function getBehaviorData(ctx: Context): Promise<BehaviorPanelData> 
     warnings.push('behavior.md 不存在或不可读（行为学习器可能尚未初始化）。')
   }
 
+  // pending
   let candidates: BehaviorPanelData['candidates'] = []
   let round = 0
   const pending = await readJson<{ round: number; candidates: BehaviorPanelData['candidates'] }>(join(dataDir, 'memory', 'behavior.pending.json'))
@@ -61,6 +75,7 @@ export async function getBehaviorData(ctx: Context): Promise<BehaviorPanelData> 
     warnings.push('behavior.pending.json 不可读（无待确认候选）。')
   }
 
+  // stats
   let stats: BehaviorPanelData['stats'] = null
   const statsRes = await readJson<NonNullable<BehaviorPanelData['stats']>>(join(dataDir, 'memory', 'behavior.stats.json'))
   if (statsRes.ok) stats = statsRes.value

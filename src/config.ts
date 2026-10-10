@@ -14,7 +14,13 @@ export interface Config {
   cleanupMaxRows: number
   /** 清理/时间过滤使用的时区（IANA 名，默认 Asia/Shanghai）；容器为 UTC 时必须显式指定 */
   timezone: string
-  /** 清理接口访问令牌：非空时 /api/cleanup 需携带 ?token= 一致才允许执行（面板静态页无鉴权，防局域网恶意调用） */
+  /**
+   * 清理接口访问令牌。
+   *
+   * 语义为 fail-closed：**留空则一律拒绝所有清理请求**（面板静态页与 REST 路由都不走
+   * Koishi 控制台鉴权，因此不能把“没配置”当作“不校验”）。配置后前端清理前需输入该令牌，
+   * 后端优先从 `x-cleanup-token` 请求头 / `Authorization: Bearer` 读取（兼容旧 query 传参）。
+   */
   cleanupToken: string
 }
 
@@ -34,5 +40,8 @@ export const Config: Schema<Config> = Schema.object({
   cleanupToken: Schema.string()
     .role('secret')
     .default('')
-    .description('清理接口访问令牌：留空不启用；设置后前端清理前需输入该令牌（写接口无 Koishi 鉴权，建议内网部署时设置）。'),
+    .description(
+      '清理接口访问令牌。留空 = 关闭清理功能（所有清理请求一律拒绝）；设置后前端清理前需输入该令牌。' +
+        '注意：该写接口不经过 Koishi 控制台鉴权，令牌请使用强随机值，并建议通过环境变量注入而非明文写入 koishi.yml。',
+    ),
 })

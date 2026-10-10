@@ -19,8 +19,16 @@
 
   async function api(path, init) {
     const res = await fetch(`${API}${path}`, init)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    // 先尝试读 JSON body：后端在 403/500 时会把可读原因放在 { ok:false, error } 里，
+    // 直接抛 "HTTP 403" 会把「未配置 cleanupToken」这类关键提示吞掉。
+    let body = null
+    try {
+      body = await res.json()
+    } catch (e) {
+      body = null
+    }
+    if (!res.ok) throw new Error((body && body.error) || `HTTP ${res.status}`)
+    return body || {}
   }
 
   /** 渲染降级/提示横幅：degraded 命中或 warnings 非空时展示 */
@@ -333,8 +341,8 @@
       if (channelId) q2.set('channelId', channelId)
       if (before) q2.set('before', before)
       if (after) q2.set('after', after)
-      if (token) q2.set('token', token)
-      const r = await api(`/cleanup?${q2.toString()}`, { method: 'POST' })
+      // 令牌走请求头而非 query：避免进入访问日志、浏览器历史与 Referer
+      const r = await api(`/cleanup?${q2.toString()}`, { method: 'POST', headers: { 'x-cleanup-token': token } })
       if (r.ok === false) {
         toast(r.error || '清理未授权或失败')
         return
